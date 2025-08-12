@@ -1,1 +1,105 @@
+%%{
+  init: {
+    'theme': 'base',
+    'themeVariables': {
+      'primaryColor': '#EBF2FA',
+      'primaryTextColor': '#2B65A9',
+      'primaryBorderColor': '#2B65A9',
+      'lineColor': '#D43F3A',
+      'secondaryColor': '#2B65A9',
+      'tertiaryColor': '#EBF2FA',
+      'secondaryTextColor': '#FFFFFF',
+      'mainBkg': '#FFFFFF',
+      'nodeBorder': '#2B65A9',
+      'actorBorder': '#A52A2A',
+      'clusterBkg': '#F0F8FF'
+    }
+  }
+}%%
+graph TD;
 
+    %% STAGE 1: PRE-TRADE & EXECUTION
+    subgraph "STAGE 1: Pre-Trade Analysis & Trade Execution"
+        A1["<font size=4><b>Pre-Trade Phase</b></font><br>Investment Manager (Buy-Side)<br>---<br>1. <b>Investment Strategy & Research:</b><br>   - Market research & analysis.<br>   - Formulate investment thesis.<br>   - Identify potential securities. [49]"]
+        A2["2. <b>Pre-Trade Compliance & Risk Analysis:</b><br>   - Check against investment mandates & regulatory limits (e.g., UCITS, Rule 18f-4). [7, 36]<br>   - Liquidity & exposure calculations (VaR). [36]<br>   - Use of internal/vendor systems (e.g., Everysk). [7, 36]"]
+        A3["3. <b>Order Generation (Decision to Trade):</b><br>   - Portfolio Manager (PM) creates a large 'parent' order.<br>   - Order Management System (OMS) receives the order. [47]"]
+        A4["4. <b>Broker Selection & Routing:</b><br>   - PM/Trader selects executing broker(s) based on best execution factors (e.g., liquidity, cost, speed).<br>   - Order is routed to the selected broker-dealer(s)."]
+        A1 --> A2 --> A3 --> A4
+
+        B1["<font size=4><b>Execution Phase</b></font><br>Broker-Dealer (Sell-Side)<br>---<br>5. <b>Order Receipt & Execution:</b><br>   - Broker receives the institutional order.<br>   - Trader works the order to achieve best execution, potentially breaking it into smaller 'child' orders. [16]<br>   - Trades are executed across various market centers (Exchanges, Dark Pools, etc.)."]
+        B2["6. <b>Execution Reporting:</b><br>   - Executed 'fills' are reported back to the Investment Manager's OMS in near real-time via FIX protocol.<br>   - The 'parent' order is filled."]
+        A4 --> B1 --> B2
+    end
+
+    %% STAGE 2: POST-EXECUTION & ALLOCATION
+    subgraph "STAGE 2: Post-Execution - Allocation & Communication"
+        C1["<font size=4><b>Trade Allocation</b></font><br>Investment Manager (Buy-Side)<br>---<br>7. <b>Allocation Instructions:</b><br>   - PM allocates the executed block trade to specific underlying funds/accounts within their OMS. [44, 47]<br>   - Allocations are typically done on a pro-rata basis at an average price. [44]<br>   - Allocation instructions are generated."]
+        C2["8. <b>Send Allocations to Broker:</b><br>   - Allocation instructions are sent from the Investment Manager's OMS to the Broker-Dealer, often via FIX."]
+        B2 --> C1 --> C2
+
+        D1["<font size=4><b>Confirmation & Enrichment</b></font><br>Broker-Dealer & DTCC Platforms<br>---<br>9. <b>Broker Confirmation:</b><br>   - Broker receives allocations and creates trade confirmations for each underlying fund.<br>   - Confirms details against their execution records. [46]"]
+        D2["10. <b>Submission to Central Trade Manager (CTM):</b><br>   - Broker-Dealer submits their version of the trade (the confirmation) to DTCC's CTM platform. [1, 2, 3]"]
+        C2 --> D1 --> D2
+
+        E1["<font size=4><b>CTM & ALERT Integration</b></font><br>Investment Manager & DTCC Platforms<br>---<br>11. <b>IM Submits Allocations to CTM:</b><br>   - Concurrently, the Investment Manager submits their allocation details to CTM. [1, 2, 3]"]
+        E2["12. <b>ALERT SSI Enrichment (Automated):</b><br>   - CTM automatically enriches the trade allocations with Standing Settlement Instructions (SSIs) from the DTCC ALERT database. [5, 14, 19]<br>   - ALERT is the 'golden source' for SSIs, which can be managed by the IM or their Global Custodian. [6, 21, 32]"]
+        C1 --> E1 --> E2
+    end
+
+    %% STAGE 3: MATCHING & AFFIRMATION
+    subgraph "STAGE 3: Central Matching & Affirmation (T+0)"
+        style F fill:#FFF3CD,stroke:#FFA500,stroke-width:2px
+        F["<font size=4><b>Central Matching in CTM</b></font><br>---<br>13. <b>Matching Process:</b><br>   - CTM compares the Broker's confirmation against the Investment Manager's (now SSI-enriched) allocation. [11]<br>   - Key economic fields are matched (Security, Price, Quantity, etc.)."]
+        E2 --> F
+        D2 --> F
+
+        G["14. <b>Match Agreed (MAGR) Status:</b><br>   - If all details match, the trade status in CTM becomes 'Match Agreed'.<br>   - This forms the legal, binding confirmation of the trade details."]
+        F --> G
+
+        H["15. <b>Match to Instruct (M2i) Workflow:</b><br>   - For firms using the M2i workflow, the 'Match Agreed' status automatically triggers the next steps toward affirmation. [1, 6, 9]<br>   - This is a critical enabler for T+1 settlement. [13]"]
+        G --> H
+
+        I["<font size=4><b>Affirmation via TradeSuite ID</b></font><br>---<br>16. <b>Auto-Affirmation Trigger:</b><br>   - The M2i workflow sends the matched trade details to TradeSuite ID.<br>   - The trade is automatically affirmed on behalf of the institution (or their agent, like a custodian). [1, 20]<br>   - An affirmed confirmation is generated and sent to all parties (IM, Broker, Custodian)."]
+        H --> I
+
+        J{"<font size=4><b>Affirmation Deadline Check<br>(9:00 PM ET on T+0)</b></font> [8, 13]"}
+        I --> J
+    end
+
+    %% STAGE 4: CLEARING & SETTLEMENT
+    subgraph "STAGE 4: Clearing & Settlement (T+1)"
+        K["<font size=4><b>TIMELY AFFIRMATION PATH</b></font><br>(Affirmed by 9:00 PM ET)"]
+        J -- "Yes (Timely)" --> K
+
+        L{"<font size=3><b>Is the Trade CNS Eligible?</b></font><br>- DTC-eligible security<br>- Between NSCC members<br>- (Typically Prime Broker trades for institutions)"}
+        K --> L
+
+        M["<font size=4><b>CNS Route (Net Settlement)</b></font><br>---<br>17a. <b>Submission to NSCC:</b><br>   - Affirmed prime broker trades are sent to the National Securities Clearing Corporation (NSCC) for novation. [22]<br>18a. <b>Multilateral Netting (Night Cycle):</b><br>   - NSCC becomes the central counterparty (CCP), guaranteeing the trade. [28, 31]<br>   - All of a firm's trades in a security are netted into a single long or short position for T+1. [29]<br>19a. <b>Settlement Instruction to DTC:</b><br>   - NSCC sends final net settlement obligations to DTC."]
+        L -- "Yes" --> M
+
+        N["<font size=4><b>PDQ Route (Trade-for-Trade)</b></font><br>---<br>17b. <b>DTC Night Cycle Processing:</b><br>   - Affirmed, non-CNS eligible trades (e.g., DVP/RVP with custodian) are processed by DTC on a trade-for-trade basis in the night cycle.<br>18b. <b>Pre-Determined Quantity (PDQ) System:</b><br>   - Settlement occurs via book-entry movement for a pre-determined quantity of shares vs. payment."]
+        L -- "No" --> N
+
+        O["<font size=4><b>LATE AFFIRMATION PATH</b></font><br>(Affirmed after 9:00 PM ET or Unaffirmed)"]
+        J -- "No (Late)" --> O
+
+        P["<font size=4><b>Delivery Order (DO) Route</b></font><br>---<br>17c. <b>Manual Intervention Required:</b><br>   - Trade misses automated night cycle.<br>   - Requires manual submission of a Delivery Order (DO) by the delivering party.<br>18c. <b>Night/Day Delivery Order (NDO/DDO):</b><br>   - The broker manually instructs DTC to deliver securities versus payment.<br>   - Higher cost and operational risk. [1]"]
+        O --> P
+
+        Q["<font size=4><b>Settlement at DTC (T+1 Morning)</b></font><br>---<br>20. <b>Final Settlement:</b><br>   - DTC processes settlement instructions from NSCC (for CNS) and its night cycle (for PDQ).<br>   - Securities are moved via book-entry from seller's account to buyer's account.<br>   - Corresponding funds are transferred between participants' settlement bank accounts."]
+        M --> Q
+        N --> Q
+        P --> Q
+    end
+
+    %% STAGE 5: POST-SETTLEMENT & FAILURE RESOLUTION
+    subgraph "STAGE 5: Post-Settlement & Reconciliation"
+        R{"<font size=4><b>Did Settlement Occur?</b></font>"}
+        Q --> R
+
+        S["<font size=4><b>Settlement Finality</b></font><br>---<br>21. <b>Trade Complete:</b><br>   - Ownership has legally transferred. [9]<br>22. <b>Custody & Asset Servicing:</b><br>   - Custodian updates records, holds assets, and manages corporate actions (dividends, splits). [2, 3, 10]<br>23. <b>Reconciliation:</b><br>   - All parties (IM, Broker, Custodian) reconcile their internal books and records."]
+        R -- "Yes" --> S
+
+        T["<font size=4><b>Settlement Failure</b></font><br>---<br>21b. <b>Identify Cause of Failure:</b><br>   - Insufficient securities or funds. [33, 41]<br>   - Operational error / incorrect instructions. [35]<br>   - Inventory management issues (e.g., shares out on loan). [40]<br>22b. <b>Resolution Process:</b><br>   - Parties communicate to resolve the issue.<br>   - May involve securities lending to acquire shares.<br>   - In extreme cases, a buy-in process may be initiated.<br>23b. <b>Financial & Reputational Impact:</b><br>   - Potential for penalties (e.g., under CSDR).<br>   - Increased counterparty and market risk. [40]"]
+        R -- "No (Fail)" --> T
+    end
