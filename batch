@@ -1,83 +1,104 @@
-# --- Script Starts Here ---
+#------------------------------------------------------------------------------------
+# SCRIPT: Process-All-Files.ps1
+# PURPOSE: Loops through all .txt files in an input folder, uses a memory-efficient
+#          stream process to replace '~' with ',', and saves new files to an output folder.
+#------------------------------------------------------------------------------------
 
-#--------------------------------------------------------------------
-# --- CONFIGURATION ---
-# ==> CHANGE THESE TWO LINES TO MATCH YOUR FILE NAMES
-#--------------------------------------------------------------------
-$inputFile = "input_file.txt"
-$outputFile = "output_file.txt"
-#--------------------------------------------------------------------
+#------------------------------------------------------------------------------------
+# ==> STEP 1: CONFIGURE YOUR FOLDER PATHS HERE
+#------------------------------------------------------------------------------------
+# 1. The folder containing your 30 split text files.
+$inputFolder = "C:\Path\To\Your\Input_Files"
 
-# This special variable gets the directory where the script itself is located.
-$scriptDirectory = $PSScriptRoot
+# 2. The folder where the new, converted files will be saved.
+$outputFolder = "C:\Path\To\Your\Output_Files"
+#------------------------------------------------------------------------------------
 
-# Create the full, absolute paths to the files.
-$inputPath = Join-Path -Path $scriptDirectory -ChildPath $inputFile
-$outputPath = Join-Path -Path $scriptDirectory -ChildPath $outputFile
 
-# --- VALIDATION ---
-# Check if the input file actually exists before we start.
-if (-not (Test-Path -Path $inputPath -PathType Leaf)) {
-    Write-Error "FATAL ERROR: The input file was not found at the expected path."
-    Write-Error "Expected Path: $inputPath"
-    Write-Error "Please make sure the file name in the script's CONFIGURATION section is correct and the file is in the same folder as the script."
-    # Stop the script
+# --- SCRIPT LOGIC (No need to edit below this line) ---
+
+# --- Validation and Setup ---
+Write-Host "Starting batch conversion process..." -ForegroundColor Cyan
+
+if (-not (Test-Path -Path $inputFolder -PathType Container)) {
+    Write-Error "FATAL ERROR: The specified input folder does not exist: $inputFolder"
+    return # Stop the script
+}
+
+# Create the output directory if it doesn't exist
+if (-not (Test-Path -Path $outputFolder -PathType Container)) {
+    Write-Host "Output folder not found. Creating it now: $outputFolder"
+    New-Item -ItemType Directory -Force -Path $outputFolder | Out-Null
+}
+
+# --- Main Processing Loop ---
+# Get all files ending with .txt in the input folder
+$filesToProcess = Get-ChildItem -Path $inputFolder -Filter "*.txt"
+
+if ($filesToProcess.Count -eq 0) {
+    Write-Warning "No .txt files were found in the input folder: $inputFolder"
     return
 }
 
-Write-Host "Starting file conversion..."
-Write-Host "Input File:  $inputPath"
-Write-Host "Output File: $outputPath"
+$totalFiles = $filesToProcess.Count
+$fileCounter = 0
+$globalStartTime = Get-Date
 
-# Initialize variables for streaming and progress tracking
-$reader = $null
-$writer = $null
-$lineNumber = 0
-$startTime = Get-Date
+Write-Host "Found $totalFiles text files to process." -ForegroundColor Green
 
-try {
-    # Create the low-level file reader and writer
-    $reader = [System.IO.StreamReader]::new($inputPath)
-    $writer = [System.IO.StreamWriter]::new($outputPath)
+# Loop through each file found
+foreach ($file in $filesToProcess) {
+    $fileCounter++
+    
+    # --- This is the core logic from your working script, adapted for the loop ---
+    
+    # Define paths for the current file in the loop
+    $currentInputPath = $file.FullName
+    $outputFileName = "$($file.BaseName)_converted.txt"
+    $currentOutputPath = Join-Path -Path $outputFolder -ChildPath $outputFileName
 
-    # Loop through the file line-by-line until we reach the end
-    while (-not $reader.EndOfStream) {
-        $line = $reader.ReadLine()
-        
-        # Perform the replacement on the single line
-        $modifiedLine = $line.Replace('~', ',')
-        
-        # Write the modified line to the output file
-        $writer.WriteLine($modifiedLine)
-        
-        $lineNumber++
-        
-        # Update progress every 100,000 lines to avoid slowing things down
-        if ($lineNumber % 100000 -eq 0) {
-            $percent = ($reader.BaseStream.Position / $reader.BaseStream.Length) * 100
-            Write-Progress -Activity "Converting File" -Status "Processing line $lineNumber" -PercentComplete $percent
+    Write-Host "`n[$fileCounter of $totalFiles] Processing $($file.Name)..."
+    
+    # Initialize variables for this file
+    $reader = $null
+    $writer = $null
+    $lineNumber = 0
+    $startTime = Get-Date
+
+    try {
+        # Create the low-level file reader and writer for the current file
+        $reader = [System.IO.StreamReader]::new($currentInputPath)
+        $writer = [System.IO.StreamWriter]::new($currentOutputPath)
+
+        # Loop through the current file line-by-line
+        while (-not $reader.EndOfStream) {
+            $line = $reader.ReadLine()
+            $modifiedLine = $line.Replace('~', ',')
+            $writer.WriteLine($modifiedLine)
+            $lineNumber++
+            
+            # Update progress bar for the current file
+            if ($lineNumber % 100000 -eq 0) {
+                $percent = ($reader.BaseStream.Position / $reader.BaseStream.Length) * 100
+                Write-Progress -Activity "Processing File: $($file.Name)" -Status "On line $lineNumber" -PercentComplete $percent
+            }
         }
     }
-}
-finally {
-    # IMPORTANT: Always close the file streams to release the files.
-    # This block is now correctly formatted.
-    if ($writer -ne $null) {
-        $writer.Close()
-        $writer.Dispose()
+    finally {
+        # IMPORTANT: Close the file streams for the current file
+        if ($writer -ne $null) { $writer.Close(); $writer.Dispose() }
+        if ($reader -ne $null) { $reader.Close(); $reader.Dispose() }
     }
-    if ($reader -ne $null) {
-        $reader.Close()
-        $reader.Dispose()
-    }
+
+    $endTime = Get-Date
+    $duration = New-TimeSpan -Start $startTime -End $endTime
+    Write-Host "  -> Finished in $($duration.ToString('g')). Output saved to: $outputFileName" -ForegroundColor Gray
+    Write-Progress -Activity "Overall Progress" -Status "Completed $fileCounter of $totalFiles files." -PercentComplete (($fileCounter / $totalFiles) * 100)
 }
 
-$endTime = Get-Date
-$duration = New-TimeSpan -Start $startTime -End $endTime
+$globalEndTime = Get-Date
+$globalDuration = New-TimeSpan -Start $globalStartTime -End $globalEndTime
 
-Write-Host "" # New line for cleaner output
-Write-Host "--- Conversion Complete! ---" -ForegroundColor Green
-Write-Host "Total lines processed: $lineNumber"
-Write-Host "Total time taken: $($duration.ToString('g'))"
-# --- Script End
-s Here ---
+Write-Host "`n--- Batch Processing Complete! ---" -ForegroundColor Green
+Write-Host "Total files converted: $fileCounter"
+Write-Host "Total time taken: $($globalDuration.ToString('g'))"
