@@ -1,10 +1,11 @@
 $reader = New-Object System.IO.StreamReader 'bigfile.txt'
 $writer = New-Object System.IO.StreamWriter 'bigfile.csv', $false, $reader.CurrentEncoding
 
-while (($line = $reader.ReadLine()) -ne $null) {
+while ($true) {
+    $line = $reader.ReadLine()
+    if ($line -eq $null) { break }
     $writer.WriteLine($line.Replace('~', ','))
 }
 
 $reader.Close()
-$writer.Close
-()
+$writer.Close()
