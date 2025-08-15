@@ -1,31 +1,23 @@
 @echo off
 setlocal enabledelayedexpansion
 
-rem Set the root folder where to search for zip files
-set "rootFolder=%~1"
-
-if "%rootFolder%"=="" (
+if "%~1"=="" (
     echo Usage: %~nx0 [folder_path]
     exit /b 1
 )
 
-rem Loop recursively through all zip files in the folder and subfolders
-for /r "%rootFolder%" %%F in (*.zip) do (
-    rem Get the full path of the zip file
+rem Recursively find and extract all .zip files
+for /r "%~1" %%F in (*.zip) do (
     set "zipFile=%%F"
-    
-    rem Define output folder: same folder as zip file, with zip file name as folder
     set "outputFolder=%%~dpF%%~nF"
-    
-    rem Create output folder if it doesn't exist
-    if not exist "!outputFolder!" mkdir "!outputFolder!"
-    
-    rem Extract the zip file to the output folder
-    rem Using powershell Expand-Archive for extraction
-    powershell -Command "Expand-Archive -Path '%%F' -DestinationPath '!outputFolder!' -Force"
-    
-    echo Extracted: %%F to !outputFolder!
+    if not exist "!outputFolder!" (
+        mkdir "!outputFolder!"
+    )
+    powershell -NoLogo -NoProfile -Command ^
+        "Expand-Archive -LiteralPath '!zipFile!' -DestinationPath '!outputFolder!' -Force"
+    echo Extracted: !zipFile! to !outputFolder!
 )
 
 echo Done.
-endlocal
+endlo
+cal
