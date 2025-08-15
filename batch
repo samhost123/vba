@@ -1,9 +1,68 @@
-# Define file paths
-$inputFile = "C:\path\to\your\input_file.txt"
-$outputFile = "C:\path\to\your\output_file.txt"
+# --- Script Starts Here ---
 
-# Process the file in chunks (e.g., 1000 lines at a time) for efficiency
-Get-Content $inputFile -ReadCount 1000 | ForEach-Object {
-    $_ -replace '~', ',' | Add-Content $outputFile
+# Set a variable to show progress. Change this to $false if you don't want updates.
+$ShowProgress = $true
 
+# --- Configuration ---
+$inputFile = "input_file.txt"  # CHANGE THIS to your 8GB file's name
+$outputFile = "output_file.txt" # The name of the new file that will be created
+
+# Get the full path to the files
+$inputPath = (Get-Item $inputFile).FullName
+$outputPath = (Get-Item $outputFile).FullName
+
+Write-Host "Starting file conversion..."
+Write-Host "Input:  $inputPath"
+Write-Host "Output: $outputPath"
+
+# Initialize variables for streaming and progress tracking
+$reader = $null
+$writer = $null
+$lineNumber = 0
+$startTime = Get-Date
+
+try {
+    # Create the low-level file reader and writer
+    # This is the key to low memory usage
+    $reader = [System.IO.StreamReader]::new($inputPath)
+    $writer = [System.IO.StreamWriter]::new($outputPath)
+
+    # Loop through the file line-by-line until we reach the end
+    while (!$reader.EndOfStream) {
+        $line = $reader.ReadLine()
+        
+        # Perform the replacement on the single line
+        $modifiedLine = $line.Replace('~', ',')
+        
+        # Write the modified line to the output file
+        $writer.WriteLine($modifiedLine)
+        
+        $lineNumber++
+        
+        # Update progress every 100,000 lines to avoid slowing things down
+        if ($ShowProgress -and ($lineNumber % 100000 -eq 0)) {
+            Write-Progress -Activity "Converting File" -Status "Processing line $lineNumber"
+        }
+    }
 }
+finally {
+    # IMPORTANT: Always close the file streams to release the files
+    if ($writer -ne $null) {
+        $writer.Close()
+        $writer.Dispose()
+    }
+    if ($reader -ne $null) {
+        $reader.Close()
+        $reader.Dispose()
+    }
+}
+
+$endTime = Get-Date
+$duration = New-TimeSpan -Start $startTime -End $endTime
+
+Write-Host "" # New line for cleaner output
+Write-Host "--- Conversion Complete! ---"
+Write-Host "Total lines processed: $lineNumber"
+Write-Host "Total time taken: $($duration.ToString('g'))"
+# --- Script Ends
+Here ---
