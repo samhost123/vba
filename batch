@@ -9,7 +9,6 @@ $outputFile = "output_file.txt"
 #--------------------------------------------------------------------
 
 # This special variable gets the directory where the script itself is located.
-# This makes the script much more reliable.
 $scriptDirectory = $PSScriptRoot
 
 # Create the full, absolute paths to the files.
@@ -41,5 +40,44 @@ try {
     $reader = [System.IO.StreamReader]::new($inputPath)
     $writer = [System.IO.StreamWriter]::new($outputPath)
 
-    # Loop through the file line-by-line until we reach
-the end
+    # Loop through the file line-by-line until we reach the end
+    while (-not $reader.EndOfStream) {
+        $line = $reader.ReadLine()
+        
+        # Perform the replacement on the single line
+        $modifiedLine = $line.Replace('~', ',')
+        
+        # Write the modified line to the output file
+        $writer.WriteLine($modifiedLine)
+        
+        $lineNumber++
+        
+        # Update progress every 100,000 lines to avoid slowing things down
+        if ($lineNumber % 100000 -eq 0) {
+            $percent = ($reader.BaseStream.Position / $reader.BaseStream.Length) * 100
+            Write-Progress -Activity "Converting File" -Status "Processing line $lineNumber" -PercentComplete $percent
+        }
+    }
+}
+finally {
+    # IMPORTANT: Always close the file streams to release the files.
+    # This block is now correctly formatted.
+    if ($writer -ne $null) {
+        $writer.Close()
+        $writer.Dispose()
+    }
+    if ($reader -ne $null) {
+        $reader.Close()
+        $reader.Dispose()
+    }
+}
+
+$endTime = Get-Date
+$duration = New-TimeSpan -Start $startTime -End $endTime
+
+Write-Host "" # New line for cleaner output
+Write-Host "--- Conversion Complete! ---" -ForegroundColor Green
+Write-Host "Total lines processed: $lineNumber"
+Write-Host "Total time taken: $($duration.ToString('g'))"
+# --- Script End
+s Here ---
