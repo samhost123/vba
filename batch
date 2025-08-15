@@ -1,23 +1,30 @@
 @echo off
-setlocal enabledelayedexpansion
+setlocal
 
 if "%~1"=="" (
-    echo Usage: %~nx0 [folder_path]
+    echo Usage: %~nx0 [source_folder] [output_folder]
     exit /b 1
 )
 
-rem Recursively find and extract all .zip files
-for /r "%~1" %%F in (*.zip) do (
-    set "zipFile=%%F"
-    set "outputFolder=%%~dpF%%~nF"
-    if not exist "!outputFolder!" (
-        mkdir "!outputFolder!"
-    )
+if "%~2"=="" (
+    echo Usage: %~nx0 [source_folder] [output_folder]
+    exit /b 1
+)
+
+set "sourceFolder=%~1"
+set "outputFolder=%~2"
+
+if not exist "%outputFolder%" (
+    mkdir "%outputFolder%"
+)
+
+rem Recursively find and extract all .zip files into the same output folder
+for /r "%sourceFolder%" %%F in (*.zip) do (
+    echo Extracting "%%F" to "%outputFolder%"
     powershell -NoLogo -NoProfile -Command ^
-        "Expand-Archive -LiteralPath '!zipFile!' -DestinationPath '!outputFolder!' -Force"
-    echo Extracted: !zipFile! to !outputFolder!
+        "Expand-Archive -LiteralPath '%%F' -DestinationPath '%outputFolder%' -Force"
 )
 
 echo Done.
-endlo
-cal
+en
+dlocal
