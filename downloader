@@ -1,0 +1,13 @@
+# Read URLs from urls.txt and save each to a unique file
+$urls = Get-Content "urls.txt"
+$counter = 1
+foreach ($url in $urls) {
+    try {
+        $output = "webpage_$counter.html"
+        Invoke-WebRequest -Uri $url -OutFile $output
+        Write-Host "Saved $url to $output"
+    } catch {
+        Write-Host "Failed to download $url"
+    }
+    $counter++
+}
