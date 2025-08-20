@@ -1,8 +1,9 @@
-Sub FilterSymbolsNettingToZero_Final_V2()
+Sub FilterSymbolsNettingToZero_Final_V3()
 
     ' --- MACRO START ---
     ' Purpose: Filters the ACTIVE sheet ("Missing Report") to only include rows for symbols
     ' where the total sum of "NET QTY DIFF" for that symbol is zero.
+    ' V3: Corrects the logic for filtering and deleting rows.
     
     ' --- Speed Optimization ---
     Application.ScreenUpdating = False
@@ -14,31 +15,27 @@ Sub FilterSymbolsNettingToZero_Final_V2()
     Dim wsReport As Worksheet
     Dim wsPivot As Worksheet
     Dim wsSymbols As Worksheet
+    Dim wsCleanList As Worksheet ' <-- New temporary sheet for a clean list
     Dim pvtCache As PivotCache
     Dim pvt As PivotTable
     Dim lastRowReport As Long
     Dim symbolKeepRange As Range
     Dim finalSum As Double
 
-    ' --- Use the ACTIVE WORKBOOK, not the one containing the code ---
+    ' --- Use the ACTIVE WORKBOOK ---
     Set wb = ActiveWorkbook
+    On Error GoTo ErrorHandler
 
-    ' --- Error Handling can be re-enabled once the macro is confirmed to work ---
-    ' On Error GoTo ErrorHandler
-
-    ' --- Setup Worksheets in the Active Workbook ---
+    ' --- Setup Worksheets ---
     Set wsReport = wb.Sheets("Missing Report")
-    
-    ' Create temporary sheets in the active data file
     Set wsPivot = wb.Sheets.Add
     Set wsSymbols = wb.Sheets.Add
+    Set wsCleanList = wb.Sheets.Add ' <-- Create the new clean list sheet
 
     ' --- Create Pivot Table to Find Symbols That Sum to Zero ---
     lastRowReport = wsReport.Cells(wsReport.Rows.Count, "L").End(xlUp).Row
     Set sourceDataRange = wsReport.Range("A1:T" & lastRowReport)
-    
     Set pvtCache = wb.PivotCaches.Create(SourceType:=xlDatabase, SourceData:=sourceDataRange)
-    
     Set pvt = pvtCache.CreatePivotTable(TableDestination:=wsPivot.Range("A3"), TableName:="SymbolSumPivot")
     
     With pvt.PivotFields("SYMBOL")
@@ -52,39 +49,43 @@ Sub FilterSymbolsNettingToZero_Final_V2()
     End With
 
     ' --- Isolate Symbols with a Zero Sum ---
-    wsPivot.Activate
     pvt.TableRange1.Copy
     wsSymbols.Range("A1").PasteSpecial Paste:=xlPasteValues
-    
     wsSymbols.Range("A:B").AutoFilter Field:=2, Criteria1:="0"
     
-    ' Check if any symbols to keep were found
     On Error Resume Next
-    Set symbolKeepRange = wsSymbols.Range("A2:A" & wsSymbols.Rows.Count).SpecialCells(xlCellTypeVisible)
-    On Error GoTo 0 ' Resets error handling
+    Set symbolKeepRange = wsSymbols.Range("A2:A" & wsSymbols.Cells(wsSymbols.Rows.Count, "A").End(xlUp).Row).SpecialCells(xlCellTypeVisible)
+    On Error GoTo ErrorHandler
     
     If symbolKeepRange Is Nothing Then
-        MsgBox "No symbols were found with a 'NET QTY DIFF' sum of zero. No changes were made to the report.", vbInformation
+        MsgBox "No symbols were found with a 'NET QTY DIFF' sum of zero. All data has been removed.", vbInformation
+        wsReport.Rows("2:" & lastRowReport).Delete ' Delete all data rows if nothing nets to zero
         GoTo Cleanup
     End If
     
+    ' >>> THIS IS THE NEW, CRITICAL STEP <<<
+    ' Copy the visible (zero-sum) symbols to the clean list sheet.
+    symbolKeepRange.Copy
+    wsCleanList.Range("A1").PasteSpecial xlPasteValues
+    ' >>> END OF NEW STEP <<<
+
     ' --- Filter the Main "Missing Report" Sheet ---
     wsReport.Activate
     
-    ' >>> THIS IS THE CORRECTED LINE <<<
-    ' Use a more robust MATCH formula that avoids the formula character limit
+    ' Use a MATCH formula that checks against the perfectly CLEAN list.
     With wsReport.Range("AF2:AF" & lastRowReport)
-        .Formula = "=IF(ISERROR(MATCH(L2,'" & wsSymbols.Name & "'!A:A,0)),0,1)"
+        .Formula = "=IF(ISERROR(MATCH(L2,'" & wsCleanList.Name & "'!A:A,0)),0,1)"
         .Value = .Value ' Convert formulas to values for speed
     End With
-    ' >>> END OF CORRECTION <<<
     
     ' Filter to show only rows that should be deleted (where helper column is 0)
     wsReport.Range("A1:AF" & lastRowReport).AutoFilter Field:=32, Criteria1:="0"
     
-    ' Delete the visible rows if any are found
+    ' Delete the visible rows if any are found (rows where symbol sum is not zero)
     If wsReport.AutoFilter.Range.Columns(1).SpecialCells(xlCellTypeVisible).Count > 1 Then
+        Application.DisplayAlerts = False ' Temporarily turn off delete confirmation
         wsReport.Range("A2:A" & lastRowReport).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+        Application.DisplayAlerts = True
     End If
     
     ' Clean up the filter and helper column
@@ -99,10 +100,11 @@ Cleanup:
     Application.DisplayAlerts = False
     If Not wsPivot Is Nothing Then wsPivot.Delete
     If Not wsSymbols Is Nothing Then wsSymbols.Delete
+    If Not wsCleanList Is Nothing Then wsCleanList.Delete ' <-- Clean up the new sheet
+    Application.DisplayAlerts = True
     
     Application.ScreenUpdating = True
     Application.Calculation = xlCalculationAutomatic
-    Application.DisplayAlerts = True
     Exit Sub
 
 ErrorHandler:
