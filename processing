@@ -1,8 +1,9 @@
-Sub FilterSymbolsNettingToZero()
+Sub FilterSymbolsNettingToZero_V2()
 
     ' --- MACRO START ---
     ' Purpose: Filters the "REPORT" sheet to only include rows for symbols
     ' where the total sum of "NET QTY DIFF" for that symbol is zero.
+    ' V2: Includes more robust error handling.
     
     ' --- Speed Optimization ---
     Application.ScreenUpdating = False
@@ -21,7 +22,7 @@ Sub FilterSymbolsNettingToZero()
     Dim symbolKeepRange As Range
     Dim finalSum As Double
 
-    ' --- Error Handling ---
+    ' --- Error Handling Start Point ---
     On Error GoTo ErrorHandler
 
     ' --- Setup Worksheets ---
@@ -66,23 +67,28 @@ Sub FilterSymbolsNettingToZero()
     lastRowSymbols = wsSymbols.Cells(wsSymbols.Rows.Count, "A").End(xlUp).Row
     wsSymbols.Range("A1:B" & lastRowSymbols).AutoFilter Field:=2, Criteria1:="0"
     
-    ' 3. Define the range of symbols to keep (only the visible cells after filtering)
+    ' 3. Check if any symbols were found that sum to zero
+    On Error Resume Next ' Temporarily ignore errors for the next line
     Set symbolKeepRange = wsSymbols.Range("A2:A" & lastRowSymbols).SpecialCells(xlCellTypeVisible)
-
+    On Error GoTo ErrorHandler ' Restore original error handling
+    
+    If symbolKeepRange Is Nothing Then
+        ' If no symbols netted to zero, inform the user and stop the macro
+        MsgBox "No symbols were found with a 'NET QTY DIFF' sum of zero. No changes were made to the report.", vbInformation
+        GoTo Cleanup ' Jump to the cleanup section to exit gracefully
+    End If
+    
     ' --- Filter the Main "REPORT" Sheet ---
     wsReport.Activate
     
     ' 1. Add a helper formula in column AF to identify which rows to keep.
-    '    The COUNTIF is faster than VLOOKUP for just checking existence.
-    '    It will place a '1' if the symbol should be kept, and '0' otherwise.
     With wsReport.Range("AF2:AF" & lastRowReport)
         .Formula = "=COUNTIF(" & wsSymbols.Name & "!" & symbolKeepRange.Address & ",L2)"
-        ' Convert formulas to values to speed up filtering
-        .Value = .Value
+        .Value = .Value ' Convert formulas to values to speed up filtering
     End With
     
-    ' 2. Filter the report to show only rows that are NOT 1 (i.e., rows to be deleted)
-    wsReport.Range("A1:AF" & lastRowReport).AutoFilter Field:=32, Criteria1:="0" ' Column AF is the 32nd column
+    ' 2. Filter the report to show only rows to be deleted (helper column <> 1)
+    wsReport.Range("A1:AF" & lastRowReport).AutoFilter Field:=32, Criteria1:="0"
     
     ' 3. Delete the visible rows (the ones we don't need)
     If wsReport.AutoFilter.Range.Columns(1).SpecialCells(xlCellTypeVisible).Count > 1 Then
@@ -90,18 +96,17 @@ Sub FilterSymbolsNettingToZero()
     End If
     
     ' 4. Clean up: Remove the filter and clear the helper column
-    wsReport.AutoFilterMode = False
+    If wsReport.AutoFilterMode Then wsReport.AutoFilterMode = False
     wsReport.Columns("AF").ClearContents
     
     ' --- Final Check ---
-    ' Sum Column T to ensure it is 0
     finalSum = Application.WorksheetFunction.Sum(wsReport.Range("T:T"))
     MsgBox "Processing complete." & vbCrLf & "The final sum of 'NET QTY DIFF' is: " & finalSum, vbInformation
 
 Cleanup:
-    ' --- Delete Temporary Sheets ---
-    wsPivot.Delete
-    wsSymbols.Delete
+    ' --- Delete Temporary Sheets (if they exist) ---
+    If Not wsPivot Is Nothing Then wsPivot.Delete
+    If Not wsSymbols Is Nothing Then wsSymbols.Delete
     
     ' --- Restore Excel Settings ---
     Application.ScreenUpdating = True
@@ -110,8 +115,10 @@ Cleanup:
     Exit Sub
 
 ErrorHandler:
-    ' --- In Case of Error ---
-    MsgBox "An error occurred: " & Err.Description, vbCritical
+    ' --- In Case of Error, report the ACTUAL error ---
+    MsgBox "An error occurred:" & vbCrLf & vbCrLf & _
+           "Error Number: " & Err.Number & vbCrLf & _
+           "Description: " & Err.Description, vbCritical
     ' Clean up even if there's an error
     GoTo Cleanup
 
