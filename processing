@@ -2,7 +2,7 @@ Sub FilterSymbolsNettingToZero_Final()
 
     ' --- MACRO START ---
     ' Purpose: Filters the ACTIVE sheet ("Missing Report") to only include rows for symbols
-    ' where the total sum of "NET Q-TY DIFF" for that symbol is zero.
+    ' where the total sum of "NET QTY DIFF" for that symbol is zero.
     
     ' --- Speed Optimization ---
     Application.ScreenUpdating = False
@@ -25,8 +25,8 @@ Sub FilterSymbolsNettingToZero_Final()
     ' --- Use the ACTIVE WORKBOOK, not the one containing the code ---
     Set wb = ActiveWorkbook
 
-    ' --- Error Handling Start Point ---
-    On Error GoTo ErrorHandler
+    ' --- Error Handling is temporarily disabled to find the problem line ---
+    ' On Error GoTo ErrorHandler
 
     ' --- Setup Worksheets in the Active Workbook ---
     Set wsReport = wb.Sheets("Missing Report")
@@ -66,7 +66,7 @@ Sub FilterSymbolsNettingToZero_Final()
     
     On Error Resume Next
     Set symbolKeepRange = wsSymbols.Range("A2:A" & wsSymbols.Rows.Count).SpecialCells(xlCellTypeVisible)
-    On Error GoTo ErrorHandler
+    On Error GoTo 0 ' Resets error handling
     
     If symbolKeepRange Is Nothing Then
         MsgBox "No symbols were found with a 'NET QTY DIFF' sum of zero. No changes were made to the report.", vbInformation
@@ -104,6 +104,8 @@ Cleanup:
     Application.DisplayAlerts = True
     Exit Sub
 
+' This ErrorHandler is now available again, but the code won't jump to it
+' because the 'On Error GoTo ErrorHandler' line at the top is commented out.
 ErrorHandler:
     MsgBox "An error occurred:" & vbCrLf & vbCrLf & _
            "Error Number: " & Err.Number & vbCrLf & _
