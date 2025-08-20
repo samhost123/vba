@@ -1,9 +1,8 @@
-Sub FilterSymbolsNettingToZero_V2()
+Sub FilterSymbolsNettingToZero_Final()
 
     ' --- MACRO START ---
-    ' Purpose: Filters the "REPORT" sheet to only include rows for symbols
-    ' where the total sum of "NET QTY DIFF" for that symbol is zero.
-    ' V2: Includes more robust error handling.
+    ' Purpose: Filters the ACTIVE sheet ("Missing Report") to only include rows for symbols
+    ' where the total sum of "NET Q-TY DIFF" for that symbol is zero.
     
     ' --- Speed Optimization ---
     Application.ScreenUpdating = False
@@ -11,6 +10,7 @@ Sub FilterSymbolsNettingToZero_V2()
     Application.DisplayAlerts = False
     
     ' --- Variable Declaration ---
+    Dim wb As Workbook
     Dim wsReport As Worksheet
     Dim wsPivot As Worksheet
     Dim wsSymbols As Worksheet
@@ -22,69 +22,58 @@ Sub FilterSymbolsNettingToZero_V2()
     Dim symbolKeepRange As Range
     Dim finalSum As Double
 
+    ' --- Use the ACTIVE WORKBOOK, not the one containing the code ---
+    Set wb = ActiveWorkbook
+
     ' --- Error Handling Start Point ---
     On Error GoTo ErrorHandler
 
-    ' --- Setup Worksheets ---
-    ' Set the main data sheet
-    ' vvv CHECK THIS SHEET NAME vvv
-    Set wsReport = ThisWorkbook.Sheets("REPORT")
-    ' ^^^ CHECK THIS SHEET NAME ^^^
+    ' --- Setup Worksheets in the Active Workbook ---
+    Set wsReport = wb.Sheets("Missing Report")
     
-    ' Create a temporary sheet for the pivot table
-    Set wsPivot = ThisWorkbook.Sheets.Add
-    
-    ' Create a temporary sheet for symbols to keep
-    Set wsSymbols = ThisWorkbook.Sheets.Add
+    ' Create temporary sheets in the active data file
+    Set wsPivot = wb.Sheets.Add
+    Set wsSymbols = wb.Sheets.Add
 
     ' --- Create Pivot Table to Find Symbols That Sum to Zero ---
-    ' 1. Define the source data range in the "REPORT" sheet
+    ' 1. Define the source data range in the "Missing Report" sheet
     lastRowReport = wsReport.Cells(wsReport.Rows.Count, "L").End(xlUp).Row
     Set sourceDataRange = wsReport.Range("A1:T" & lastRowReport)
     
-    ' 2. Create a pivot cache (memory for the pivot table)
-    Set pvtCache = ThisWorkbook.PivotCaches.Create(SourceType:=xlDatabase, SourceData:=sourceDataRange)
+    ' 2. Create a pivot cache in the active data file
+    Set pvtCache = wb.PivotCaches.Create(SourceType:=xlDatabase, SourceData:=sourceDataRange)
     
     ' 3. Create the pivot table on the temporary pivot sheet
     Set pvt = pvtCache.CreatePivotTable(TableDestination:=wsPivot.Range("A3"), TableName:="SymbolSumPivot")
     
     ' 4. Configure the pivot table fields
-    ' vvv CHECK THIS HEADER NAME (from cell L1) vvv
     With pvt.PivotFields("SYMBOL")
         .Orientation = xlRowField
         .Position = 1
     End With
-    ' ^^^ CHECK THIS HEADER NAME (from cell L1) ^^^
-    
-    ' vvv CHECK THIS HEADER NAME (from cell T1) vvv
     With pvt.PivotFields("NET QTY DIFF")
         .Orientation = xlDataField
         .Function = xlSum
         .Name = "Sum of NET QTY DIFF"
     End With
-    ' ^^^ CHECK THIS HEADER NAME (from cell T1) ^^^
 
     ' --- Isolate Symbols with a Zero Sum ---
-    ' 1. Copy pivot table results to the symbols sheet as values
     wsPivot.Activate
     pvt.TableRange1.Copy
     wsSymbols.Range("A1").PasteSpecial Paste:=xlPasteValues
     
-    ' 2. Filter this new list to show only rows where the sum is 0
-    lastRowSymbols = wsSymbols.Cells(wsSymbols.Rows.Count, "A").End(xlUp).Row
-    wsSymbols.Range("A1:B" & lastRowSymbols).AutoFilter Field:=2, Criteria1:="0"
+    wsSymbols.Range("A:B").AutoFilter Field:=2, Criteria1:="0"
     
-    ' 3. Check if any symbols were found that sum to zero
-    On Error Resume Next ' Temporarily ignore errors for the next line
-    Set symbolKeepRange = wsSymbols.Range("A2:A" & lastRowSymbols).SpecialCells(xlCellTypeVisible)
-    On Error GoTo ErrorHandler ' Restore original error handling
+    On Error Resume Next
+    Set symbolKeepRange = wsSymbols.Range("A2:A" & wsSymbols.Rows.Count).SpecialCells(xlCellTypeVisible)
+    On Error GoTo ErrorHandler
     
     If symbolKeepRange Is Nothing Then
         MsgBox "No symbols were found with a 'NET QTY DIFF' sum of zero. No changes were made to the report.", vbInformation
         GoTo Cleanup
     End If
     
-    ' --- Filter the Main "REPORT" Sheet ---
+    ' --- Filter the Main "Missing Report" Sheet ---
     wsReport.Activate
     
     With wsReport.Range("AF2:AF" & lastRowReport)
@@ -120,24 +109,5 @@ ErrorHandler:
            "Error Number: " & Err.Number & vbCrLf & _
            "Description: " & Err.Description, vbCritical
     GoTo Cleanup
-
-End Sub```
-
-After performing the copy/paste steps, please try running the macro again. This will very likely solve the problem.
-
-
-Sub ListSheetNames()
-
-    Dim allSheetNames As String
-    Dim currentSheet As Object
-
-    allSheetNames = "Here are the exact sheet names found in this workbook:" & vbCrLf & vbCrLf
-
-    For Each currentSheet In ThisWorkbook.Sheets
-        ' We add brackets [] to make any hidden spaces at the start or end obvious
-        allSheetNames = allSheetNames & "[" & currentSheet.Name & "]" & vbCrLf
-    Next currentSheet
-
-    MsgBox allSheetNames, vbInformation, "Available Sheets"
 
 End Sub
