@@ -1,0 +1,118 @@
+Sub FilterSymbolsNettingToZero()
+
+    ' --- MACRO START ---
+    ' Purpose: Filters the "REPORT" sheet to only include rows for symbols
+    ' where the total sum of "NET QTY DIFF" for that symbol is zero.
+    
+    ' --- Speed Optimization ---
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.DisplayAlerts = False
+    
+    ' --- Variable Declaration ---
+    Dim wsReport As Worksheet
+    Dim wsPivot As Worksheet
+    Dim wsSymbols As Worksheet
+    Dim pvtCache As PivotCache
+    Dim pvt As PivotTable
+    Dim lastRowReport As Long
+    Dim lastRowSymbols As Long
+    Dim sourceDataRange As Range
+    Dim symbolKeepRange As Range
+    Dim finalSum As Double
+
+    ' --- Error Handling ---
+    On Error GoTo ErrorHandler
+
+    ' --- Setup Worksheets ---
+    ' Set the main data sheet
+    Set wsReport = ThisWorkbook.Sheets("REPORT")
+    
+    ' Create a temporary sheet for the pivot table
+    Set wsPivot = ThisWorkbook.Sheets.Add
+    
+    ' Create a temporary sheet for symbols to keep
+    Set wsSymbols = ThisWorkbook.Sheets.Add
+
+    ' --- Create Pivot Table to Find Symbols That Sum to Zero ---
+    ' 1. Define the source data range in the "REPORT" sheet
+    lastRowReport = wsReport.Cells(wsReport.Rows.Count, "L").End(xlUp).Row
+    Set sourceDataRange = wsReport.Range("A1:T" & lastRowReport)
+    
+    ' 2. Create a pivot cache (memory for the pivot table)
+    Set pvtCache = ThisWorkbook.PivotCaches.Create(SourceType:=xlDatabase, SourceData:=sourceDataRange)
+    
+    ' 3. Create the pivot table on the temporary pivot sheet
+    Set pvt = pvtCache.CreatePivotTable(TableDestination:=wsPivot.Range("A3"), TableName:="SymbolSumPivot")
+    
+    ' 4. Configure the pivot table fields
+    With pvt.PivotFields("SYMBOL")
+        .Orientation = xlRowField
+        .Position = 1
+    End With
+    With pvt.PivotFields("NET QTY DIFF")
+        .Orientation = xlDataField
+        .Function = xlSum
+        .Name = "Sum of NET QTY DIFF"
+    End With
+
+    ' --- Isolate Symbols with a Zero Sum ---
+    ' 1. Copy pivot table results to the symbols sheet as values
+    wsPivot.Activate
+    pvt.TableRange1.Copy
+    wsSymbols.Range("A1").PasteSpecial Paste:=xlPasteValues
+    
+    ' 2. Filter this new list to show only rows where the sum is 0
+    lastRowSymbols = wsSymbols.Cells(wsSymbols.Rows.Count, "A").End(xlUp).Row
+    wsSymbols.Range("A1:B" & lastRowSymbols).AutoFilter Field:=2, Criteria1:="0"
+    
+    ' 3. Define the range of symbols to keep (only the visible cells after filtering)
+    Set symbolKeepRange = wsSymbols.Range("A2:A" & lastRowSymbols).SpecialCells(xlCellTypeVisible)
+
+    ' --- Filter the Main "REPORT" Sheet ---
+    wsReport.Activate
+    
+    ' 1. Add a helper formula in column AF to identify which rows to keep.
+    '    The COUNTIF is faster than VLOOKUP for just checking existence.
+    '    It will place a '1' if the symbol should be kept, and '0' otherwise.
+    With wsReport.Range("AF2:AF" & lastRowReport)
+        .Formula = "=COUNTIF(" & wsSymbols.Name & "!" & symbolKeepRange.Address & ",L2)"
+        ' Convert formulas to values to speed up filtering
+        .Value = .Value
+    End With
+    
+    ' 2. Filter the report to show only rows that are NOT 1 (i.e., rows to be deleted)
+    wsReport.Range("A1:AF" & lastRowReport).AutoFilter Field:=32, Criteria1:="0" ' Column AF is the 32nd column
+    
+    ' 3. Delete the visible rows (the ones we don't need)
+    If wsReport.AutoFilter.Range.Columns(1).SpecialCells(xlCellTypeVisible).Count > 1 Then
+        wsReport.Range("A2:A" & lastRowReport).SpecialCells(xlCellTypeVisible).EntireRow.Delete
+    End If
+    
+    ' 4. Clean up: Remove the filter and clear the helper column
+    wsReport.AutoFilterMode = False
+    wsReport.Columns("AF").ClearContents
+    
+    ' --- Final Check ---
+    ' Sum Column T to ensure it is 0
+    finalSum = Application.WorksheetFunction.Sum(wsReport.Range("T:T"))
+    MsgBox "Processing complete." & vbCrLf & "The final sum of 'NET QTY DIFF' is: " & finalSum, vbInformation
+
+Cleanup:
+    ' --- Delete Temporary Sheets ---
+    wsPivot.Delete
+    wsSymbols.Delete
+    
+    ' --- Restore Excel Settings ---
+    Application.ScreenUpdating = True
+    Application.Calculation = xlCalculationAutomatic
+    Application.DisplayAlerts = True
+    Exit Sub
+
+ErrorHandler:
+    ' --- In Case of Error ---
+    MsgBox "An error occurred: " & Err.Description, vbCritical
+    ' Clean up even if there's an error
+    GoTo Cleanup
+
+End Sub
