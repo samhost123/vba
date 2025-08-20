@@ -124,3 +124,20 @@ ErrorHandler:
 End Sub```
 
 After performing the copy/paste steps, please try running the macro again. This will very likely solve the problem.
+
+
+Sub ListSheetNames()
+
+    Dim allSheetNames As String
+    Dim currentSheet As Object
+
+    allSheetNames = "Here are the exact sheet names found in this workbook:" & vbCrLf & vbCrLf
+
+    For Each currentSheet In ThisWorkbook.Sheets
+        ' We add brackets [] to make any hidden spaces at the start or end obvious
+        allSheetNames = allSheetNames & "[" & currentSheet.Name & "]" & vbCrLf
+    Next currentSheet
+
+    MsgBox allSheetNames, vbInformation, "Available Sheets"
+
+End Sub
