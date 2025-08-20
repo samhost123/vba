@@ -1,4 +1,4 @@
-Sub FilterSymbolsNettingToZero_Final()
+Sub FilterSymbolsNettingToZero_Final_V2()
 
     ' --- MACRO START ---
     ' Purpose: Filters the ACTIVE sheet ("Missing Report") to only include rows for symbols
@@ -17,15 +17,13 @@ Sub FilterSymbolsNettingToZero_Final()
     Dim pvtCache As PivotCache
     Dim pvt As PivotTable
     Dim lastRowReport As Long
-    Dim lastRowSymbols As Long
-    Dim sourceDataRange As Range
     Dim symbolKeepRange As Range
     Dim finalSum As Double
 
     ' --- Use the ACTIVE WORKBOOK, not the one containing the code ---
     Set wb = ActiveWorkbook
 
-    ' --- Error Handling is temporarily disabled to find the problem line ---
+    ' --- Error Handling can be re-enabled once the macro is confirmed to work ---
     ' On Error GoTo ErrorHandler
 
     ' --- Setup Worksheets in the Active Workbook ---
@@ -36,17 +34,13 @@ Sub FilterSymbolsNettingToZero_Final()
     Set wsSymbols = wb.Sheets.Add
 
     ' --- Create Pivot Table to Find Symbols That Sum to Zero ---
-    ' 1. Define the source data range in the "Missing Report" sheet
     lastRowReport = wsReport.Cells(wsReport.Rows.Count, "L").End(xlUp).Row
     Set sourceDataRange = wsReport.Range("A1:T" & lastRowReport)
     
-    ' 2. Create a pivot cache in the active data file
     Set pvtCache = wb.PivotCaches.Create(SourceType:=xlDatabase, SourceData:=sourceDataRange)
     
-    ' 3. Create the pivot table on the temporary pivot sheet
     Set pvt = pvtCache.CreatePivotTable(TableDestination:=wsPivot.Range("A3"), TableName:="SymbolSumPivot")
     
-    ' 4. Configure the pivot table fields
     With pvt.PivotFields("SYMBOL")
         .Orientation = xlRowField
         .Position = 1
@@ -64,6 +58,7 @@ Sub FilterSymbolsNettingToZero_Final()
     
     wsSymbols.Range("A:B").AutoFilter Field:=2, Criteria1:="0"
     
+    ' Check if any symbols to keep were found
     On Error Resume Next
     Set symbolKeepRange = wsSymbols.Range("A2:A" & wsSymbols.Rows.Count).SpecialCells(xlCellTypeVisible)
     On Error GoTo 0 ' Resets error handling
@@ -76,17 +71,23 @@ Sub FilterSymbolsNettingToZero_Final()
     ' --- Filter the Main "Missing Report" Sheet ---
     wsReport.Activate
     
+    ' >>> THIS IS THE CORRECTED LINE <<<
+    ' Use a more robust MATCH formula that avoids the formula character limit
     With wsReport.Range("AF2:AF" & lastRowReport)
-        .Formula = "=COUNTIF(" & wsSymbols.Name & "!" & symbolKeepRange.Address & ",L2)"
-        .Value = .Value
+        .Formula = "=IF(ISERROR(MATCH(L2,'" & wsSymbols.Name & "'!A:A,0)),0,1)"
+        .Value = .Value ' Convert formulas to values for speed
     End With
+    ' >>> END OF CORRECTION <<<
     
+    ' Filter to show only rows that should be deleted (where helper column is 0)
     wsReport.Range("A1:AF" & lastRowReport).AutoFilter Field:=32, Criteria1:="0"
     
+    ' Delete the visible rows if any are found
     If wsReport.AutoFilter.Range.Columns(1).SpecialCells(xlCellTypeVisible).Count > 1 Then
         wsReport.Range("A2:A" & lastRowReport).SpecialCells(xlCellTypeVisible).EntireRow.Delete
     End If
     
+    ' Clean up the filter and helper column
     If wsReport.AutoFilterMode Then wsReport.AutoFilterMode = False
     wsReport.Columns("AF").ClearContents
     
@@ -104,8 +105,6 @@ Cleanup:
     Application.DisplayAlerts = True
     Exit Sub
 
-' This ErrorHandler is now available again, but the code won't jump to it
-' because the 'On Error GoTo ErrorHandler' line at the top is commented out.
 ErrorHandler:
     MsgBox "An error occurred:" & vbCrLf & vbCrLf & _
            "Error Number: " & Err.Number & vbCrLf & _
