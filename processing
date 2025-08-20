@@ -27,7 +27,9 @@ Sub FilterSymbolsNettingToZero_V2()
 
     ' --- Setup Worksheets ---
     ' Set the main data sheet
+    ' vvv CHECK THIS SHEET NAME vvv
     Set wsReport = ThisWorkbook.Sheets("REPORT")
+    ' ^^^ CHECK THIS SHEET NAME ^^^
     
     ' Create a temporary sheet for the pivot table
     Set wsPivot = ThisWorkbook.Sheets.Add
@@ -47,15 +49,20 @@ Sub FilterSymbolsNettingToZero_V2()
     Set pvt = pvtCache.CreatePivotTable(TableDestination:=wsPivot.Range("A3"), TableName:="SymbolSumPivot")
     
     ' 4. Configure the pivot table fields
+    ' vvv CHECK THIS HEADER NAME (from cell L1) vvv
     With pvt.PivotFields("SYMBOL")
         .Orientation = xlRowField
         .Position = 1
     End With
+    ' ^^^ CHECK THIS HEADER NAME (from cell L1) ^^^
+    
+    ' vvv CHECK THIS HEADER NAME (from cell T1) vvv
     With pvt.PivotFields("NET QTY DIFF")
         .Orientation = xlDataField
         .Function = xlSum
         .Name = "Sum of NET QTY DIFF"
     End With
+    ' ^^^ CHECK THIS HEADER NAME (from cell T1) ^^^
 
     ' --- Isolate Symbols with a Zero Sum ---
     ' 1. Copy pivot table results to the symbols sheet as values
@@ -73,29 +80,24 @@ Sub FilterSymbolsNettingToZero_V2()
     On Error GoTo ErrorHandler ' Restore original error handling
     
     If symbolKeepRange Is Nothing Then
-        ' If no symbols netted to zero, inform the user and stop the macro
         MsgBox "No symbols were found with a 'NET QTY DIFF' sum of zero. No changes were made to the report.", vbInformation
-        GoTo Cleanup ' Jump to the cleanup section to exit gracefully
+        GoTo Cleanup
     End If
     
     ' --- Filter the Main "REPORT" Sheet ---
     wsReport.Activate
     
-    ' 1. Add a helper formula in column AF to identify which rows to keep.
     With wsReport.Range("AF2:AF" & lastRowReport)
         .Formula = "=COUNTIF(" & wsSymbols.Name & "!" & symbolKeepRange.Address & ",L2)"
-        .Value = .Value ' Convert formulas to values to speed up filtering
+        .Value = .Value
     End With
     
-    ' 2. Filter the report to show only rows to be deleted (helper column <> 1)
     wsReport.Range("A1:AF" & lastRowReport).AutoFilter Field:=32, Criteria1:="0"
     
-    ' 3. Delete the visible rows (the ones we don't need)
     If wsReport.AutoFilter.Range.Columns(1).SpecialCells(xlCellTypeVisible).Count > 1 Then
         wsReport.Range("A2:A" & lastRowReport).SpecialCells(xlCellTypeVisible).EntireRow.Delete
     End If
     
-    ' 4. Clean up: Remove the filter and clear the helper column
     If wsReport.AutoFilterMode Then wsReport.AutoFilterMode = False
     wsReport.Columns("AF").ClearContents
     
@@ -104,22 +106,21 @@ Sub FilterSymbolsNettingToZero_V2()
     MsgBox "Processing complete." & vbCrLf & "The final sum of 'NET QTY DIFF' is: " & finalSum, vbInformation
 
 Cleanup:
-    ' --- Delete Temporary Sheets (if they exist) ---
+    Application.DisplayAlerts = False
     If Not wsPivot Is Nothing Then wsPivot.Delete
     If Not wsSymbols Is Nothing Then wsSymbols.Delete
     
-    ' --- Restore Excel Settings ---
     Application.ScreenUpdating = True
     Application.Calculation = xlCalculationAutomatic
     Application.DisplayAlerts = True
     Exit Sub
 
 ErrorHandler:
-    ' --- In Case of Error, report the ACTUAL error ---
     MsgBox "An error occurred:" & vbCrLf & vbCrLf & _
            "Error Number: " & Err.Number & vbCrLf & _
            "Description: " & Err.Description, vbCritical
-    ' Clean up even if there's an error
     GoTo Cleanup
 
-End Sub
+End Sub```
+
+After performing the copy/paste steps, please try running the macro again. This will very likely solve the problem.
