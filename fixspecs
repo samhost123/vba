@@ -1,0 +1,210 @@
+' --- HELPER FUNCTIONS ---
+
+Private Function GetSheetValue(ByVal ws As Worksheet, ByVal label As String) As String
+    ' Safely retrieves a value from Column B corresponding to a label in Column A.
+    ' Returns a trimmed string or an empty string if the label is not found.
+    On Error Resume Next
+    Dim foundCell As Range
+    Set foundCell = ws.Columns("A").Find(What:=label, LookIn:=xlValues, LookAt:=xlWhole, MatchCase:=False)
+    If Not foundCell Is Nothing Then
+        GetSheetValue = Trim(ws.Cells(foundCell.Row, 2).value)
+    Else
+        GetSheetValue = ""
+    End If
+    On Error GoTo 0
+End Function
+
+Private Function NormalizeTimestamp(ByVal inputTime As String) As String
+    ' Normalizes various timestamp inputs to the required YYYYMMDD-HH:MM:SS.mmm format.
+    If Len(inputTime) < 19 Then
+        NormalizeTimestamp = ""
+        Exit Function
+    End If
+    Dim datePart As String, timePart As String
+    datePart = Replace(Left(inputTime, 10), "-", "") ' Handles YYYY-MM-DD and YYYYMMDD
+    timePart = Mid(inputTime, InStr(inputTime, " ") + 1)
+    NormalizeTimestamp = datePart & "-" & timePart
+End Function
+
+Private Sub AppendFixTag(ByRef fixString As String, ByVal tag As String, ByVal value As String)
+    ' Appends a "tag=value|" pair to the FIX string.
+    ' Skips adding the tag if the value is empty.
+    If Trim(value) <> "" Then
+        fixString = fixString & tag & "=" & value & "|"
+    End If
+End Sub
+
+Public Sub Generate_ORF_StepOut_FIX()
+    ' Main sub to generate the FINRA ORF Step-Out FIX message.
+    
+    Dim ws As Worksheet
+    Dim fixBuilder As String
+    Dim partiesBuilder As String
+    Dim partyCount As Integer
+    Const DELIM As String = "|"
+
+    ' --- Input Variables ---
+    Dim senderCompId, targetCompId, onBehalfOfCompId, onBehalfOfSubId, tradeReportId As String
+    Dim tradeDate, transactTime, asOfIndicator, symbol, securityId, securityIdSource As String
+    Dim side, orderQty, lastShares, lastPx, price, priceType, tradeCurrency, ordType As String
+    Dim publishIndicator, stepIndicator, reportingObligation, clearingInstruction As String
+    Dim execFirmMpid, rcvFirmMpid, giveUpFirmMpid, includeClearingParty, clearingNumber As String
+
+    On Error GoTo ErrorHandler
+
+    ' --- 1. INITIALIZATION ---
+    Set ws = ThisWorkbook.Sheets("Sheet1")
+    fixBuilder = ""
+    partiesBuilder = ""
+    partyCount = 0
+
+    ' --- 2. READ INPUTS FROM SHEET ---
+    senderCompId = GetSheetValue(ws, "SenderCompID")
+    targetCompId = GetSheetValue(ws, "TargetCompID")
+    onBehalfOfCompId = GetSheetValue(ws, "OnBehalfOfCompID")
+    onBehalfOfSubId = GetSheetValue(ws, "OnBehalfOfSubID")
+    tradeReportId = GetSheetValue(ws, "TradeReportID")
+    tradeDate = GetSheetValue(ws, "TradeDate")
+    transactTime = GetSheetValue(ws, "TransactTime")
+    asOfIndicator = GetSheetValue(ws, "AsOfIndicator")
+    symbol = GetSheetValue(ws, "Symbol")
+    securityId = GetSheetValue(ws, "SecurityID")
+    securityIdSource = GetSheetValue(ws, "SecurityIDSource")
+    side = GetSheetValue(ws, "Side")
+    orderQty = GetSheetValue(ws, "OrderQty")
+    lastShares = GetSheetValue(ws, "LastShares")
+    lastPx = GetSheetValue(ws, "LastPx")
+    price = GetSheetValue(ws, "Price")
+    priceType = GetSheetValue(ws, "PriceType")
+    tradeCurrency = GetSheetValue(ws, "Currency") ' CORRECTED
+    ordType = GetSheetValue(ws, "OrdType")
+    publishIndicator = GetSheetValue(ws, "PublishIndicator")
+    stepIndicator = GetSheetValue(ws, "StepIndicator")
+    reportingObligation = GetSheetValue(ws, "ReportingObligation")
+    clearingInstruction = GetSheetValue(ws, "ClearingInstruction")
+    execFirmMpid = GetSheetValue(ws, "ExecutingFirmMPID")
+    rcvFirmMpid = GetSheetValue(ws, "ReceivingFirmMPID")
+    giveUpFirmMpid = GetSheetValue(ws, "GiveUpFirmMPID")
+    includeClearingParty = GetSheetValue(ws, "IncludeClearingNumberParty")
+    clearingNumber = GetSheetValue(ws, "ClearingNumber")
+
+    ' --- 3. VALIDATE REQUIRED FIELDS AND RULES ---
+    If senderCompId = "" Then Err.Raise vbObjectError, , "SenderCompID is required."
+    If targetCompId = "" Then Err.Raise vbObjectError, , "TargetCompID is required."
+    If tradeReportId = "" Then Err.Raise vbObjectError, , "TradeReportID is required."
+    If tradeDate = "" Then Err.Raise vbObjectError, , "TradeDate is required."
+    If transactTime = "" Then Err.Raise vbObjectError, , "TransactTime is required."
+    If symbol = "" Then Err.Raise vbObjectError, , "Symbol is required."
+    If side = "" Then Err.Raise vbObjectError, , "Side is required."
+    If orderQty = "" Then Err.Raise vbObjectError, , "OrderQty is required."
+    If lastShares = "" Then Err.Raise vbObjectError, , "LastShares is required."
+    If lastPx = "" Then Err.Raise vbObjectError, , "LastPx is required."
+    If price = "" Then Err.Raise vbObjectError, , "Price is required."
+    If execFirmMpid = "" Then Err.Raise vbObjectError, , "ExecutingFirmMPID is required."
+    If rcvFirmMpid = "" Then Err.Raise vbObjectError, , "ReceivingFirmMPID is required."
+    
+    If UCase(publishIndicator) <> "N" Then Err.Raise vbObjectError, , "PublishIndicator (852) must be 'N' for a step-out."
+    If UCase(stepIndicator) <> "STEPOUT" Then Err.Raise vbObjectError, , "StepIndicator must be 'StepOut'."
+    If UCase(reportingObligation) <> "Y" Then Err.Raise vbObjectError, , "ReportingObligation (22030) must be 'Y' for the stepping-out firm."
+    If UCase(includeClearingParty) = "TRUE" And clearingNumber = "" Then Err.Raise vbObjectError, , "ClearingNumber is required when IncludeClearingNumberParty is TRUE."
+
+    ' --- 4. ASSEMBLE THE FIX MESSAGE ---
+    
+    AppendFixTag fixBuilder, "8", "FIX.4.2"
+    AppendFixTag fixBuilder, "35", "AE"
+    AppendFixTag fixBuilder, "49", senderCompId
+    AppendFixTag fixBuilder, "56", targetCompId
+    AppendFixTag fixBuilder, "115", onBehalfOfCompId
+    AppendFixTag fixBuilder, "116", onBehalfOfSubId
+    AppendFixTag fixBuilder, "52", Format(Now, "YYYYMMDD-HH:MM:SS.000")
+    AppendFixTag fixBuilder, "571", tradeReportId
+    AppendFixTag fixBuilder, "150", "0"
+    AppendFixTag fixBuilder, "39", "2"
+    AppendFixTag fixBuilder, "55", symbol
+    If securityId <> "" And securityIdSource <> "" Then
+        AppendFixTag fixBuilder, "48", securityId
+        AppendFixTag fixBuilder, "22", securityIdSource
+    End If
+    AppendFixTag fixBuilder, "54", side
+    AppendFixTag fixBuilder, "38", orderQty
+    AppendFixTag fixBuilder, "32", lastShares
+    AppendFixTag fixBuilder, "31", lastPx
+    AppendFixTag fixBuilder, "44", price
+    AppendFixTag fixBuilder, "423", priceType
+    AppendFixTag fixBuilder, "60", NormalizeTimestamp(transactTime)
+    AppendFixTag fixBuilder, "75", Replace(tradeDate, "-", "")
+    AppendFixTag fixBuilder, "1015", asOfIndicator
+    AppendFixTag fixBuilder, "15", tradeCurrency ' CORRECTED
+    AppendFixTag fixBuilder, "40", ordType
+    
+    AppendFixTag fixBuilder, "81", "3"
+    AppendFixTag fixBuilder, "852", "N"
+    AppendFixTag fixBuilder, "22030", "Y"
+    
+    If UCase(clearingInstruction) = "SENDTOCLEARING" Then AppendFixTag fixBuilder, "577", "0"
+
+    ' -- Parties Repeating Group --
+    partiesBuilder = partiesBuilder & "448=" & execFirmMpid & DELIM & "447=C" & DELIM & "452=1" & DELIM
+    partyCount = partyCount + 1
+    
+    partiesBuilder = partiesBuilder & "448=" & rcvFirmMpid & DELIM & "447=C" & DELIM & "452=17" & DELIM
+    partyCount = partyCount + 1
+    
+    If giveUpFirmMpid <> "" Then
+        partiesBuilder = partiesBuilder & "448=" & giveUpFirmMpid & DELIM & "447=C" & DELIM & "452=14" & DELIM
+        partyCount = partyCount + 1
+    End If
+    
+    If UCase(includeClearingParty) = "TRUE" And clearingNumber <> "" Then
+        partiesBuilder = partiesBuilder & "448=" & clearingNumber & DELIM & "447=P" & DELIM & "452=83" & DELIM
+        partyCount = partyCount + 1
+    End If
+    
+    AppendFixTag fixBuilder, "453", CStr(partyCount)
+    fixBuilder = fixBuilder & partiesBuilder
+    
+    If Right(fixBuilder, 1) = DELIM Then
+        fixBuilder = Left(fixBuilder, Len(fixBuilder) - 1)
+    End If
+
+    ' --- 5. WRITE OUTPUT TO CELL AND NOTIFY USER ---
+    ws.Range("B40").value = fixBuilder
+    MsgBox "FINRA ORF Step-Out FIX 4.2 message generated successfully in cell B40.", vbInformation, "Success"
+
+    Exit Sub
+
+ErrorHandler:
+    MsgBox "Error: " & Err.Description, vbCritical, "Macro Failed"
+    
+End Sub
+
+
+
+SenderCompID
+TargetCompID
+OnBehalfOfCompID
+OnBehalfOfSubID
+TradeReportID
+TradeDate
+TransactTime
+AsOfIndicator
+Symbol
+SecurityID
+SecurityIDSource
+Side
+OrderQty
+LastShares
+LastPx
+Price
+PriceType
+Currency
+OrdType
+PublishIndicator
+StepIndicator
+ReportingObligation
+ClearingInstruction
+ExecutingFirmMPID
+ReceivingFirmMPID
+GiveUpFirmMPID
+IncludeClearingNumberParty
+ClearingNumber
