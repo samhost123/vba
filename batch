@@ -1,136 +1,157 @@
-Sub ParseFixMessages()
+Sub ParseFixMessages_TransposedView()
     ' --- SETTINGS ---
-    ' Change this character to match the separator in your FIX messages.
-    ' Common examples: "|" (pipe), ";" (semicolon), Chr(1) (standard SOH character)
-    Const DELIMITER As String = "|"
+    ' Set the character that separates the tag=value pairs in your messages.
+    ' Your example used a semicolon ";". Common alternatives are "|" or Chr(1).
+    Const DELIMITER As String = ";"
     ' --- END SETTINGS ---
 
     Dim wsInput As Worksheet
     Dim wsOutput As Worksheet
-    Dim lastRow As Long
-    Dim i As Long, j As Long
-    
-    ' Dictionaries to hold tags and values. Requires a reference to 'Microsoft Scripting Runtime'.
-    Dim allTags As Object
-    Dim msgDict As Object
-    Dim tagColumnMap As Object
-    
-    Set allTags = CreateObject("Scripting.Dictionary")
-    Set tagColumnMap = CreateObject("Scripting.Dictionary")
-    
-    ' Set the input worksheet. The macro will stop if it doesn't exist.
+    Dim tagNames As Object
+    Dim lastInputRow As Long
+    Dim outputRow As Long
+    Dim i As Long
+
+    ' Check if the input sheet exists
     On Error Resume Next
     Set wsInput = ThisWorkbook.Sheets("Sheet1")
     On Error GoTo 0
     If wsInput Is Nothing Then
-        MsgBox "Worksheet 'Sheet1' not found. Please check the sheet name.", vbCritical
+        MsgBox "Error: Worksheet named 'Sheet1' was not found.", vbCritical
         Exit Sub
     End If
-    
-    ' --- First Pass: Collect all unique tags ---
-    lastRow = wsInput.Cells(wsInput.Rows.Count, "A").End(xlUp).Row
-    
-    For i = 1 To lastRow
-        If Trim(wsInput.Cells(i, 1).Value) <> "" Then
-            Dim pairs() As String
-            pairs = Split(wsInput.Cells(i, 1).Value, DELIMITER)
-            
-            For j = 0 To UBound(pairs)
-                Dim tagVal() As String
-                If InStr(pairs(j), "=") > 0 Then
-                    tagVal = Split(pairs(j), "=", 2)
-                    If Not allTags.Exists(tagVal(0)) Then
-                        allTags.Add tagVal(0), 0
-                    End If
-                End If
-            Next j
-        End If
-    Next i
-    
-    If allTags.Count = 0 Then
-        MsgBox "No FIX messages found or no tags could be parsed in Column A of Sheet1.", vbInformation
-        Exit Sub
-    End If
-    
+
+    ' Initialize the dictionary of FIX Tag names
+    Set tagNames = InitializeTagNames()
+
     ' --- Prepare the Output Sheet ---
-    ' Delete old output sheet if it exists, and create a new one.
+    ' Delete the old output sheet if it exists
     Application.DisplayAlerts = False
     On Error Resume Next
     ThisWorkbook.Sheets("FIX_Output").Delete
     On Error GoTo 0
     Application.DisplayAlerts = True
     
+    ' Add a new, clean output sheet
     Set wsOutput = ThisWorkbook.Sheets.Add(After:=wsInput)
     wsOutput.Name = "FIX_Output"
-    
-    ' --- Sort the tags numerically for the header ---
-    Dim sortedTags As Object
-    Set sortedTags = SortDictionaryKeys(allTags)
-    
-    ' --- Create the Header Row and map tags to columns ---
-    Dim col As Integer
-    col = 1
-    For Each tag In sortedTags
-        wsOutput.Cells(1, col).Value = tag
-        tagColumnMap.Add tag, col
-        col = col + 1
-    Next tag
-    
-    ' --- Second Pass: Populate the data rows ---
-    Dim currentRow As Long
-    currentRow = 2
-    
-    For i = 1 To lastRow
-        If Trim(wsInput.Cells(i, 1).Value) <> "" Then
-            Set msgDict = CreateObject("Scripting.Dictionary")
+
+    ' --- Main Processing Loop ---
+    lastInputRow = wsInput.Cells(wsInput.Rows.Count, "A").End(xlUp).Row
+    outputRow = 1 ' Start writing on the first row of the output sheet
+
+    For i = 1 To lastInputRow
+        Dim fixMessage As String
+        fixMessage = Trim(wsInput.Cells(i, 1).Value)
+
+        If fixMessage <> "" Then
+            Dim pairs() As String
+            Dim tagVal() As String
+            Dim j As Integer
+            Dim outputCol As Integer
             
-            ' Parse the current message into a dictionary
-            pairs = Split(wsInput.Cells(i, 1).Value, DELIMITER)
+            pairs = Split(fixMessage, DELIMITER)
+            outputCol = 1
+
+            ' Loop through each tag=value pair in the message
             For j = 0 To UBound(pairs)
                 If InStr(pairs(j), "=") > 0 Then
                     tagVal = Split(pairs(j), "=", 2)
-                    If Not msgDict.Exists(tagVal(0)) Then
-                        msgDict.Add tagVal(0), tagVal(1)
+                    Dim currentTag As String
+                    Dim currentValue As String
+                    currentTag = tagVal(0)
+                    currentValue = tagVal(1)
+
+                    ' Write the Tag, Value, and Name to the output sheet
+                    wsOutput.Cells(outputRow, outputCol).Value = currentTag
+                    wsOutput.Cells(outputRow + 1, outputCol).Value = currentValue
+                    
+                    If tagNames.Exists(currentTag) Then
+                        wsOutput.Cells(outputRow + 2, outputCol).Value = tagNames(currentTag)
+                    Else
+                        wsOutput.Cells(outputRow + 2, outputCol).Value = "Unknown Tag"
                     End If
+                    
+                    outputCol = outputCol + 1 ' Move to the next column
                 End If
             Next j
+
+            ' Format the block for the current message
+            wsOutput.Rows(outputRow).Font.Bold = True ' Bold the Tag numbers
+            wsOutput.Rows(outputRow + 2).Font.Italic = True ' Italicize the Tag Names
+            wsOutput.Rows(outputRow + 2).Font.Color = RGB(100, 100, 100) ' Gray color for names
             
-            ' Fill the row based on the header columns
-            For Each tag In tagColumnMap.Keys
-                If msgDict.Exists(tag) Then
-                    wsOutput.Cells(currentRow, tagColumnMap(tag)).Value = msgDict(tag)
-                End If
-            Next tag
-            
-            currentRow = currentRow + 1
+            ' Move the output row cursor down for the next message, leaving a blank row
+            outputRow = outputRow + 4
         End If
     Next i
-    
+
     ' --- Final Formatting ---
-    With wsOutput.Rows(1)
-        .Font.Bold = True
-    End With
     wsOutput.Columns.AutoFit
-    
-    MsgBox "FIX message processing is complete. Data is available in the 'FIX_Output' sheet.", vbInformation
+    MsgBox "Processing complete! Your parsed FIX messages are in the 'FIX_Output' sheet.", vbInformation
 End Sub
 
-' Helper function to sort dictionary keys numerically
-Private Function SortDictionaryKeys(dict As Object) As Object
-    Dim keys As Object
-    Set keys = CreateObject("System.Collections.ArrayList")
+
+Private Function InitializeTagNames() As Object
+    ' Creates and populates a dictionary of common FIX tags and their names.
+    ' ** YOU CAN ADD MORE TAGS AND DESCRIPTIONS HERE **
+    ' Syntax: .Add "TAG_NUMBER", "TAG_NAME"
     
-    ' Add keys to ArrayList
-    For Each key In dict.Keys
-        If IsNumeric(key) Then
-            keys.Add CLng(key) ' Convert to number for proper sorting
-        Else
-            keys.Add key
-        End If
-    Next key
+    Dim dict As Object
+    Set dict = CreateObject("Scripting.Dictionary")
+
+    ' --- Standard Header Tags ---
+    dict.Add "8", "BeginString"
+    dict.Add "9", "BodyLength"
+    dict.Add "35", "MsgType"
+    dict.Add "49", "SenderCompID"
+    dict.Add "56", "TargetCompID"
+    dict.Add "34", "MsgSeqNum"
+    dict.Add "52", "SendingTime"
+    dict.Add "50", "SenderSubID"
+    dict.Add "57", "TargetSubID"
+    dict.Add "115", "OnBehalfOfCompID"
+    dict.Add "116", "OnBehalfOfSubID"
     
-    ' Sort the ArrayList
-    keys.Sort
+    ' --- Standard Trailer Tags ---
+    dict.Add "10", "CheckSum"
     
-    Set SortDictionaryKeys = keys
+    ' --- Common Message Body Tags from your Document ---
+    dict.Add "11", "ClOrdID" ' Although not in ORF spec, it's a common tag
+    dict.Add "31", "LastPx"
+    dict.Add "32", "LastQty"
+    dict.Add "54", "Side"
+    dict.Add "55", "Symbol"
+    dict.Add "60", "TransactTime"
+    dict.Add "75", "TradeDate"
+    dict.Add "150", "ExecType"
+    dict.Add "423", "PriceType"
+    dict.Add "453", "NoPartyIDs"
+    dict.Add "448", "PartyID"
+    dict.Add "447", "PartyIDSource"
+    dict.Add "452", "PartyRole"
+    dict.Add "571", "TradeReportID"
+    dict.Add "572", "TradeReportRefID"
+    dict.Add "856", "TradeReportType"
+    dict.Add "487", "TradeReportTransType"
+    dict.Add "1003", "TradeID"
+    dict.Add "1041", "FirmTradeID"
+    dict.Add "1042", "SecondaryFirmTradeID"
+    dict.Add "1126", "OrigTradeID"
+    
+    ' --- FINRA Custom Tags from your Document ---
+    dict.Add "22001", "TradeModifier1"
+    dict.Add "22003", "TradeModifier3"
+    dict.Add "22004", "TradeModifier4"
+    dict.Add "22005", "SpecialProcessingFlag"
+    dict.Add "22011", "ControlDate"
+    dict.Add "22012", "OrigControlDate"
+    dict.Add "22013", "LockedInIndicator"
+    dict.Add "22024", "ShortSaleIndicator"
+    dict.Add "22029", "ReferenceReportingFacility"
+    dict.Add "22030", "ReportingObligation"
+    
+    ' ** ADD MORE TAGS HERE **
+    
+    Set InitializeTagNames = dict
 End Function
