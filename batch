@@ -1,104 +1,136 @@
-#------------------------------------------------------------------------------------
-# SCRIPT: Process-All-Files.ps1
-# PURPOSE: Loops through all .txt files in an input folder, uses a memory-efficient
-#          stream process to replace '~' with ',', and saves new files to an output folder.
-#------------------------------------------------------------------------------------
+Sub ParseFixMessages()
+    ' --- SETTINGS ---
+    ' Change this character to match the separator in your FIX messages.
+    ' Common examples: "|" (pipe), ";" (semicolon), Chr(1) (standard SOH character)
+    Const DELIMITER As String = "|"
+    ' --- END SETTINGS ---
 
-#------------------------------------------------------------------------------------
-# ==> STEP 1: CONFIGURE YOUR FOLDER PATHS HERE
-#------------------------------------------------------------------------------------
-# 1. The folder containing your 30 split text files.
-$inputFolder = "C:\Path\To\Your\Input_Files"
-
-# 2. The folder where the new, converted files will be saved.
-$outputFolder = "C:\Path\To\Your\Output_Files"
-#------------------------------------------------------------------------------------
-
-
-# --- SCRIPT LOGIC (No need to edit below this line) ---
-
-# --- Validation and Setup ---
-Write-Host "Starting batch conversion process..." -ForegroundColor Cyan
-
-if (-not (Test-Path -Path $inputFolder -PathType Container)) {
-    Write-Error "FATAL ERROR: The specified input folder does not exist: $inputFolder"
-    return # Stop the script
-}
-
-# Create the output directory if it doesn't exist
-if (-not (Test-Path -Path $outputFolder -PathType Container)) {
-    Write-Host "Output folder not found. Creating it now: $outputFolder"
-    New-Item -ItemType Directory -Force -Path $outputFolder | Out-Null
-}
-
-# --- Main Processing Loop ---
-# Get all files ending with .txt in the input folder
-$filesToProcess = Get-ChildItem -Path $inputFolder -Filter "*.txt"
-
-if ($filesToProcess.Count -eq 0) {
-    Write-Warning "No .txt files were found in the input folder: $inputFolder"
-    return
-}
-
-$totalFiles = $filesToProcess.Count
-$fileCounter = 0
-$globalStartTime = Get-Date
-
-Write-Host "Found $totalFiles text files to process." -ForegroundColor Green
-
-# Loop through each file found
-foreach ($file in $filesToProcess) {
-    $fileCounter++
+    Dim wsInput As Worksheet
+    Dim wsOutput As Worksheet
+    Dim lastRow As Long
+    Dim i As Long, j As Long
     
-    # --- This is the core logic from your working script, adapted for the loop ---
+    ' Dictionaries to hold tags and values. Requires a reference to 'Microsoft Scripting Runtime'.
+    Dim allTags As Object
+    Dim msgDict As Object
+    Dim tagColumnMap As Object
     
-    # Define paths for the current file in the loop
-    $currentInputPath = $file.FullName
-    $outputFileName = "$($file.BaseName)_converted.txt"
-    $currentOutputPath = Join-Path -Path $outputFolder -ChildPath $outputFileName
-
-    Write-Host "`n[$fileCounter of $totalFiles] Processing $($file.Name)..."
+    Set allTags = CreateObject("Scripting.Dictionary")
+    Set tagColumnMap = CreateObject("Scripting.Dictionary")
     
-    # Initialize variables for this file
-    $reader = $null
-    $writer = $null
-    $lineNumber = 0
-    $startTime = Get-Date
-
-    try {
-        # Create the low-level file reader and writer for the current file
-        $reader = [System.IO.StreamReader]::new($currentInputPath)
-        $writer = [System.IO.StreamWriter]::new($currentOutputPath)
-
-        # Loop through the current file line-by-line
-        while (-not $reader.EndOfStream) {
-            $line = $reader.ReadLine()
-            $modifiedLine = $line.Replace('~', ',')
-            $writer.WriteLine($modifiedLine)
-            $lineNumber++
+    ' Set the input worksheet. The macro will stop if it doesn't exist.
+    On Error Resume Next
+    Set wsInput = ThisWorkbook.Sheets("Sheet1")
+    On Error GoTo 0
+    If wsInput Is Nothing Then
+        MsgBox "Worksheet 'Sheet1' not found. Please check the sheet name.", vbCritical
+        Exit Sub
+    End If
+    
+    ' --- First Pass: Collect all unique tags ---
+    lastRow = wsInput.Cells(wsInput.Rows.Count, "A").End(xlUp).Row
+    
+    For i = 1 To lastRow
+        If Trim(wsInput.Cells(i, 1).Value) <> "" Then
+            Dim pairs() As String
+            pairs = Split(wsInput.Cells(i, 1).Value, DELIMITER)
             
-            # Update progress bar for the current file
-            if ($lineNumber % 100000 -eq 0) {
-                $percent = ($reader.BaseStream.Position / $reader.BaseStream.Length) * 100
-                Write-Progress -Activity "Processing File: $($file.Name)" -Status "On line $lineNumber" -PercentComplete $percent
-            }
-        }
-    }
-    finally {
-        # IMPORTANT: Close the file streams for the current file
-        if ($writer -ne $null) { $writer.Close(); $writer.Dispose() }
-        if ($reader -ne $null) { $reader.Close(); $reader.Dispose() }
-    }
+            For j = 0 To UBound(pairs)
+                Dim tagVal() As String
+                If InStr(pairs(j), "=") > 0 Then
+                    tagVal = Split(pairs(j), "=", 2)
+                    If Not allTags.Exists(tagVal(0)) Then
+                        allTags.Add tagVal(0), 0
+                    End If
+                End If
+            Next j
+        End If
+    Next i
+    
+    If allTags.Count = 0 Then
+        MsgBox "No FIX messages found or no tags could be parsed in Column A of Sheet1.", vbInformation
+        Exit Sub
+    End If
+    
+    ' --- Prepare the Output Sheet ---
+    ' Delete old output sheet if it exists, and create a new one.
+    Application.DisplayAlerts = False
+    On Error Resume Next
+    ThisWorkbook.Sheets("FIX_Output").Delete
+    On Error GoTo 0
+    Application.DisplayAlerts = True
+    
+    Set wsOutput = ThisWorkbook.Sheets.Add(After:=wsInput)
+    wsOutput.Name = "FIX_Output"
+    
+    ' --- Sort the tags numerically for the header ---
+    Dim sortedTags As Object
+    Set sortedTags = SortDictionaryKeys(allTags)
+    
+    ' --- Create the Header Row and map tags to columns ---
+    Dim col As Integer
+    col = 1
+    For Each tag In sortedTags
+        wsOutput.Cells(1, col).Value = tag
+        tagColumnMap.Add tag, col
+        col = col + 1
+    Next tag
+    
+    ' --- Second Pass: Populate the data rows ---
+    Dim currentRow As Long
+    currentRow = 2
+    
+    For i = 1 To lastRow
+        If Trim(wsInput.Cells(i, 1).Value) <> "" Then
+            Set msgDict = CreateObject("Scripting.Dictionary")
+            
+            ' Parse the current message into a dictionary
+            pairs = Split(wsInput.Cells(i, 1).Value, DELIMITER)
+            For j = 0 To UBound(pairs)
+                If InStr(pairs(j), "=") > 0 Then
+                    tagVal = Split(pairs(j), "=", 2)
+                    If Not msgDict.Exists(tagVal(0)) Then
+                        msgDict.Add tagVal(0), tagVal(1)
+                    End If
+                End If
+            Next j
+            
+            ' Fill the row based on the header columns
+            For Each tag In tagColumnMap.Keys
+                If msgDict.Exists(tag) Then
+                    wsOutput.Cells(currentRow, tagColumnMap(tag)).Value = msgDict(tag)
+                End If
+            Next tag
+            
+            currentRow = currentRow + 1
+        End If
+    Next i
+    
+    ' --- Final Formatting ---
+    With wsOutput.Rows(1)
+        .Font.Bold = True
+    End With
+    wsOutput.Columns.AutoFit
+    
+    MsgBox "FIX message processing is complete. Data is available in the 'FIX_Output' sheet.", vbInformation
+End Sub
 
-    $endTime = Get-Date
-    $duration = New-TimeSpan -Start $startTime -End $endTime
-    Write-Host "  -> Finished in $($duration.ToString('g')). Output saved to: $outputFileName" -ForegroundColor Gray
-    Write-Progress -Activity "Overall Progress" -Status "Completed $fileCounter of $totalFiles files." -PercentComplete (($fileCounter / $totalFiles) * 100)
-}
-
-$globalEndTime = Get-Date
-$globalDuration = New-TimeSpan -Start $globalStartTime -End $globalEndTime
-
-Write-Host "`n--- Batch Processing Complete! ---" -ForegroundColor Green
-Write-Host "Total files converted: $fileCounter"
-Write-Host "Total time taken: $($globalDuration.ToString('g'))"
+' Helper function to sort dictionary keys numerically
+Private Function SortDictionaryKeys(dict As Object) As Object
+    Dim keys As Object
+    Set keys = CreateObject("System.Collections.ArrayList")
+    
+    ' Add keys to ArrayList
+    For Each key In dict.Keys
+        If IsNumeric(key) Then
+            keys.Add CLng(key) ' Convert to number for proper sorting
+        Else
+            keys.Add key
+        End If
+    Next key
+    
+    ' Sort the ArrayList
+    keys.Sort
+    
+    Set SortDictionaryKeys = keys
+End Function
